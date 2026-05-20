@@ -62,19 +62,38 @@
 
         // 1. เริ่มเปิดกล้อง Webcam
         async function setupWebcam() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480, facingMode: { ideal: "environment" } },
-                    audio: false
-                });
-                video.srcObject = stream;
-                return new Promise((resolve) => {
-                    video.onloadedmetadata = () => { resolve(video); };
-                });
-            } catch (error) {
-                statusText.innerText = "ไม่สามารถเข้าถึงกล้องได้: " + error.message;
-            }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+                // บังคับเปิดกล้องหลัง (environment) เท่านั้น
+                facingMode: { exact: "environment" },
+                // ปรับขนาดให้ยืดหยุ่น ถ้า 640x480 ไม่ได้ ให้ระบบเลือกขนาดที่ใกล้เคียงที่สุด
+                width: { ideal: 640 }, 
+                height: { ideal: 480 } 
+            },
+            audio: false
+        });
+        video.srcObject = stream;
+        return new Promise((resolve) => {
+            video.onloadedmetadata = () => { resolve(video); };
+        });
+    } catch (error) {
+        // แผนสำรอง: ถ้าเปิดกล้องหลังแบบบังคับ (exact) ไม่สำเร็จ ให้ลองเปิดแบบปกติ (เผื่อรันบนคอมที่มีกล้องตัวเดียว)
+        console.warn("ไม่สามารถบังคับเปิดกล้องหลังได้ กำลังลองโหมดทั่วไป...", error);
+        try {
+            const fallbackStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: false
+            });
+            video.srcObject = fallbackStream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => { resolve(video); };
+            });
+        } catch (fallbackError) {
+            statusText.innerText = "ไม่สามารถเข้าถึงกล้องได้: " + fallbackError.message;
         }
+    }
+}
 
         // 2. ฟังก์ชันทำนายวัตถุจากภาพในกล้อง (Loop ไปเรื่อยๆ)
         async function predictLoop() {
