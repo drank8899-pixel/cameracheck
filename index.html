@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AI Object Detector | ตรวจจับวัตถุแบบเรียลไทม์</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <!-- COCO-SSD Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header Section -->
+    <header class="bg-gray-800 px-4 py-3 shadow-lg">
+        <h1 class="text-xl font-bold text-center text-blue-400">AI Object Detector</h1>
+        <!-- Status Bar -->
+        <div id="status-bar" class="mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-yellow-600 animate-pulse">
+            กำลังโหลดโมเดล...
+        </div>
+    </header>
+
+    <!-- Camera Viewport Section -->
+    <main class="relative flex items-center justify-center p-4">
+        <div id="camera-container" class="relative w-full max-w-lg aspect-[9/16] max-h-[60vh] bg-black rounded-lg overflow-hidden shadow-xl">
+            <!-- Video Element for Camera Stream -->
+            <video id="video" autoplay playsinline class="absolute inset-0 w-full h-full object-cover"></video>
+
+            <!-- Canvas Overlay for Drawing Bounding Boxes -->
+            <canvas id="overlay" class="absolute inset-0 w-full h-full"></canvas>
+        </div>
+    </main>
+
+    <!-- Control Panel -->
+    <section class="px-4 py-4">
+        <div class="flex justify-center gap-3 mb-4">
+            <button id="start-btn" class="px-6 py-3 bg-green-600 hover:bg-green-700 rounded-full font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+                เริ่มการทำงาน
+            </button>
+            <button id="pause-btn" disabled class="px-6 py-3 bg-yellow-600 hover:bg-yellow-700 rounded-full font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+                หยุดชั่วคราว
+            </button>
+            <button id="switch-camera-btn" disabled class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-full font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+                สลับกล้อง
+            </button>
+        </div>
+    </section>
+
+    <!-- Live Dashboard -->
+    <section class="px-4 pb-6">
+        <div class="bg-gray-800 rounded-lg p-4 min-h-[100px]">
+            <h2 class="text-lg font-semibold mb-3 text-blue-400">Live Dashboard</h2>
+            <div id="detections-list" class="space-y-2">
+                <p class="text-gray-500 text-center">ยังไม่มีการตรวจจับวัตถุ</p>
+            </div>
+        </div>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+</html>
