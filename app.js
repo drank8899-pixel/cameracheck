@@ -1,5 +1,6 @@
 /**
- * AI Object Detection Web App
+ * AI Object Detection Web App Pro
+ * Features: Object Detection + Direction Detection + Color Recognition
  * Uses TensorFlow.js and COCO-SSD for real-time object detection
  */
 
@@ -10,34 +11,46 @@ const statusBar = document.getElementById('status-bar');
 const startBtn = document.getElementById('start-btn');
 const pauseBtn = document.getElementById('pause-btn');
 const switchCameraBtn = document.getElementById('switch-camera-btn');
-const detectionsList = document.getElementById('detections-list');
+const noDetections = document.getElementById('no-detections');
+
+// Direction Dashboard Elements
+const leftDetections = document.getElementById('left-detections');
+const centerDetections = document.getElementById('center-detections');
+const rightDetections = document.getElementById('right-detections');
+const directionTabs = document.querySelectorAll('.direction-tab');
 
 // State Variables
-let stream = null;           // MediaStream object
-let model = null;            // TensorFlow.js COCO-SSD model
-let isDetecting = false;     // Detection loop flag
-let usingFrontCamera = false; // Camera toggle state
-let animationId = null;      // RequestAnimationFrame ID
+let stream = null;
+let model = null;
+let isDetecting = false;
+let usingFrontCamera = false;
+let animationId = null;
+let currentDirection = 'center';
+let currentPredictions = [];
+
+// Direction Detection Algorithm:
+// Calculate bounding box center X coordinate and compare to video width
+// Left: centerX < 1/3 of width
+// Center: 1/3 <= centerX <= 2/3 of width
+// Right: centerX > 2/3 of width
+
+/**
+ * Color Recognition Algorithm:
+ * 1. Sample pixels from center region of bounding box
+ * 2. Calculate average RGB values
+ * 3. Convert RGB to closest basic color name using Euclidean distance in RGB space
+ */
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
 
-/**
- * Main initialization function
- * Loads the AI model and sets up event listeners
- */
 async function init() {
-    // Set up button event listeners
-    startBtn.addEventListener('click', startCamera);
-    pauseBtn.addEventListener('click', toggleDetection);
-    switchCameraBtn.addEventListener('click', switchCamera);
+    setupEventListeners();
 
-    // Load the COCO-SSD model
     statusBar.textContent = 'กำลังโหลดโมเดล AI...';
     statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-yellow-600 animate-pulse';
 
     try {
-        // Load TensorFlow.js model
         model = await cocoSsd.load();
         statusBar.textContent = 'ระบบพร้อมทำงาน - กด "เริ่มการทำงาน"';
         statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-green-600';
@@ -49,87 +62,92 @@ async function init() {
     }
 }
 
-/**
- * Start the camera with rear camera preference (mobile-first)
- * Falls back to front camera if rear is unavailable
- */
+function setupEventListeners() {
+    startBtn.addEventListener('click', startCamera);
+    pauseBtn.addEventListener('click', toggleDetection);
+    switchCameraBtn.addEventListener('click', switchCamera);
+
+    directionTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            currentDirection = tab.dataset.direction;
+            updateDirectionTabs();
+            showDirectionContent(currentDirection);
+        });
+    });
+}
+
+function updateDirectionTabs() {
+    directionTabs.forEach(tab => {
+        if (tab.dataset.direction === currentDirection) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+}
+
+function showDirectionContent(direction) {
+    leftDetections.classList.toggle('hidden', direction !== 'left');
+    centerDetections.classList.toggle('hidden', direction !== 'center');
+    rightDetections.classList.toggle('hidden', direction !== 'right');
+}
+
 async function startCamera() {
     try {
-        // Try rear camera first (environment), fallback to any camera
         const constraints = {
-            video: {
-                facingMode: { ideal: "environment" }
-            }
+            video: { facingMode: { ideal: "environment" } }
         };
 
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
 
-        // Update UI state
         startBtn.disabled = true;
         pauseBtn.disabled = false;
         switchCameraBtn.disabled = false;
 
-        // Wait for video to be ready
         video.onloadedmetadata = () => {
             video.play();
             statusBar.textContent = 'กล้องพร้อม - กด "หยุดชั่วคราว" เพื่อเริ่มตรวจจับ';
             statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-green-600';
         };
 
-        // Start detection automatically after camera starts
         startDetection();
 
     } catch (error) {
         console.error('Error accessing camera:', error);
-
-        // Fallback to front camera if rear fails
-        try {
-            const frontConstraints = {
-                video: {
-                    facingMode: "user"
-                }
-            };
-            stream = await navigator.mediaDevices.getUserMedia(frontConstraints);
-            video.srcObject = stream;
-            usingFrontCamera = true;
-
-            startBtn.disabled = true;
-            pauseBtn.disabled = false;
-            switchCameraBtn.disabled = false;
-
-            video.onloadedmetadata = () => {
-                video.play();
-                statusBar.textContent = 'ใช้กล้องหน้าระบบพร้อม';
-            };
-
-            startDetection();
-
-        } catch (fallbackError) {
-            console.error('Fallback camera also failed:', fallbackError);
-            statusBar.textContent = 'ไม่สามารถเข้าถึงกล้องได้';
-            statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-red-600';
-        }
+        tryFallbackCamera();
     }
 }
 
-/**
- * Switch between front and rear cameras
- */
+async function tryFallbackCamera() {
+    try {
+        const frontConstraints = { video: { facingMode: "user" } };
+        stream = await navigator.mediaDevices.getUserMedia(frontConstraints);
+        video.srcObject = stream;
+        usingFrontCamera = true;
+
+        startBtn.disabled = true;
+        pauseBtn.disabled = false;
+        switchCameraBtn.disabled = false;
+
+        video.onloadedmetadata = () => video.play();
+        statusBar.textContent = 'ใช้กล้องหน้าระบบพร้อม';
+
+        startDetection();
+    } catch (fallbackError) {
+        statusBar.textContent = 'ไม่สามารถเข้าถึงกล้องได้';
+        statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-red-600';
+    }
+}
+
 async function switchCamera() {
     if (!stream) return;
 
-    // Stop current stream
     stream.getTracks().forEach(track => track.stop());
-
-    // Toggle camera
     const newFacingMode = usingFrontCamera ? "environment" : "user";
 
     try {
-        const constraints = {
-            video: { facingMode: newFacingMode }
-        };
-
+        const constraints = { video: { facingMode: newFacingMode } };
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         usingFrontCamera = !usingFrontCamera;
@@ -138,27 +156,18 @@ async function switchCamera() {
         setTimeout(() => {
             statusBar.textContent = 'กล้องพร้อม - กด "หยุดชั่วคราว" เพื่อเริ่มตรวจจับ';
         }, 1500);
-
     } catch (error) {
-        console.error('Error switching camera:', error);
         statusBar.textContent = 'ไม่สามารถสลับกล้องได้';
     }
 }
 
-/**
- * Start the detection loop
- */
 function startDetection() {
     isDetecting = true;
     statusBar.textContent = 'กำลังตรวจจับวัตถุ...';
     statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-blue-600 animate-pulse';
-
     detectFrame();
 }
 
-/**
- * Toggle detection pause/resume
- */
 function toggleDetection() {
     if (isDetecting) {
         pauseDetection();
@@ -167,9 +176,6 @@ function toggleDetection() {
     }
 }
 
-/**
- * Pause the detection loop
- */
 function pauseDetection() {
     isDetecting = false;
     pauseBtn.textContent = 'เริ่มตรวจจับ';
@@ -184,9 +190,6 @@ function pauseDetection() {
     statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-yellow-600';
 }
 
-/**
- * Resume the detection loop
- */
 function resumeDetection() {
     isDetecting = true;
     pauseBtn.textContent = 'หยุดชั่วคราว';
@@ -195,14 +198,10 @@ function resumeDetection() {
     detectFrame();
 }
 
-/**
- * Main detection loop - runs continuously when active
- */
 async function detectFrame() {
     if (!isDetecting || !model) return;
 
     try {
-        // Get video dimensions
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
 
@@ -211,125 +210,207 @@ async function detectFrame() {
             return;
         }
 
-        // Run object detection on current video frame
         const predictions = await model.detect(video);
-
-        // Draw results
-        renderDetections(predictions);
+        renderDetections(predictions, videoWidth);
 
     } catch (error) {
         console.error('Detection error:', error);
     }
 
-    // Schedule next frame
     animationId = requestAnimationFrame(detectFrame);
 }
 
 /**
- * Render detection results on canvas and update dashboard
+ * Direction Detection Algorithm:
+ * Calculates object position relative to screen width
+ * Left: centerX < 1/3 of width
+ * Center: 1/3 <= centerX <= 2/3 of width
+ * Right: centerX > 2/3 of width
  */
-function renderDetections(predictions) {
+function getDirection(bbox, videoWidth) {
+    const [x, y, width, height] = bbox;
+    const centerX = x + width / 2;
+    const third = videoWidth / 3;
+
+    if (centerX < third) return 'left';
+    if (centerX > 2 * third) return 'right';
+    return 'center';
+}
+
+/**
+ * Color Recognition Algorithm:
+ * 1. Extract pixels from center region of bounding box
+ * 2. Calculate average RGB values
+ * 3. Find closest color name using RGB Euclidean distance
+ */
+function getColorFromBBox(bbox) {
+    try {
+        // Create temp canvas to extract pixel data
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+
+        const [x, y, width, height] = bbox;
+
+        // Sample from center region for better color accuracy
+        const sampleWidth = Math.max(10, Math.min(50, width * 0.4));
+        const sampleHeight = Math.max(10, Math.min(50, height * 0.4));
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+
+        const sx = centerX - sampleWidth / 2;
+        const sy = centerY - sampleHeight / 2;
+
+        // Draw video frame to temp canvas at original resolution
+        tempCanvas.width = video.videoWidth;
+        tempCanvas.height = video.videoHeight;
+        tempCtx.drawImage(video, 0, 0);
+
+        // Get pixel data from center region
+        const imageData = tempCtx.getImageData(sx, sy, sampleWidth, sampleHeight);
+        const data = imageData.data;
+
+        // Calculate average RGB
+        let r = 0, g = 0, b = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            r += data[i];
+            g += data[i + 1];
+            b += data[i + 2];
+        }
+
+        const pixelCount = data.length / 4;
+        r = Math.round(r / pixelCount);
+        g = Math.round(g / pixelCount);
+        b = Math.round(b / pixelCount);
+
+        return rgbToColorName(r, g, b);
+    } catch (error) {
+        console.error('Color detection error:', error);
+        return 'Unknown';
+    }
+}
+
+/**
+ * RGB to Color Name conversion using Euclidean distance
+ * Finds the closest named color from predefined basic colors
+ */
+function rgbToColorName(r, g, b) {
+    const colors = [
+        { name: 'Red', rgb: [239, 68, 68] },
+        { name: 'Green', rgb: [34, 197, 94] },
+        { name: 'Blue', rgb: [59, 130, 246] },
+        { name: 'Yellow', rgb: [234, 179, 8] },
+        { name: 'Black', rgb: [17, 17, 17] },
+        { name: 'White', rgb: [243, 244, 246] },
+        { name: 'Orange', rgb: [249, 115, 22] },
+        { name: 'Purple', rgb: [168, 85, 247] },
+        { name: 'Pink', rgb: [236, 72, 153] },
+        { name: 'Brown', rgb: [146, 64, 14] },
+        { name: 'Gray', rgb: [107, 114, 128] },
+        { name: 'Cyan', rgb: [6, 182, 212] }
+    ];
+
+    let minDistance = Infinity;
+    let closestColor = 'Unknown';
+
+    for (const color of colors) {
+        const [cr, cg, cb] = color.rgb;
+        // Euclidean distance in RGB space
+        const distance = Math.sqrt((r - cr) ** 2 + (g - cg) ** 2 + (b - cb) ** 2);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestColor = color.name;
+        }
+    }
+
+    return closestColor;
+}
+
+function renderDetections(predictions, videoWidth) {
+    currentPredictions = predictions;
     const ctx = canvas.getContext('2d');
-    const videoWidth = video.videoWidth;
-    const videoHeight = video.videoHeight;
 
-    // Set canvas dimensions to match video
     canvas.width = videoWidth;
-    canvas.height = videoHeight;
+    canvas.height = video.videoHeight;
 
-    // Clear previous drawings
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Update dashboard
-    updateDashboard(predictions);
+    // Group detections by direction
+    const detectionsByDirection = { left: [], center: [], right: [] };
 
-    // Draw bounding boxes and labels
     predictions.forEach(prediction => {
-        const [x, y, width, height] = prediction.bbox;
+        const direction = getDirection(prediction.bbox, videoWidth);
+        const color = getColorFromBBox(prediction.bbox);
         const confidence = Math.round(prediction.score * 100);
 
+        detectionsByDirection[direction].push({
+            ...prediction,
+            color,
+            confidence
+        });
+
         // Draw bounding box
+        const [x, y, width, height] = prediction.bbox;
         ctx.strokeStyle = '#00ff88';
         ctx.lineWidth = 3;
         ctx.strokeRect(x, y, width, height);
 
-        // Draw label background
-        ctx.fillStyle = '#00ff88';
+        // Draw label with color and direction
+        const labelText = `${color} ${prediction.class} - ${confidence}% (${getDirectionText(direction)})`;
         ctx.font = 'bold 14px sans-serif';
-        const labelText = `${prediction.class} ${confidence}%`;
         const textWidth = ctx.measureText(labelText).width;
 
-        // Label background
+        ctx.fillStyle = '#00ff88';
         ctx.fillRect(x, y - 22, textWidth + 10, 22);
 
-        // Draw label text
         ctx.fillStyle = '#000';
         ctx.fillText(labelText, x + 5, y - 6);
     });
+
+    updateDashboard(detectionsByDirection);
 }
 
 /**
- * Update the Live Dashboard with detected objects
+ * Update the Live Dashboard with separated direction tabs
  */
-function updateDashboard(predictions) {
-    if (predictions.length === 0) {
-        detectionsList.innerHTML = '<p class="text-gray-500 text-center">ไม่มีการตรวจจับวัตถุ</p>';
-        return;
-    }
+function updateDashboard(detectionsByDirection) {
+    // Update each direction tab content
+    ['left', 'center', 'right'].forEach(direction => {
+        const container = document.getElementById(`${direction}-detections`);
+        const detections = detectionsByDirection[direction];
 
-    // Clear previous detections
-    detectionsList.innerHTML = '';
+        if (detections.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-sm text-center">ไม่มีวัตถุในพื้นที่นี้</p>';
+        } else {
+            container.innerHTML = '';
+            detections.forEach(det => {
+                const div = document.createElement('div');
+                div.className = 'detection-item flex justify-between items-center bg-gray-700 px-2 py-1 rounded text-sm mb-1';
 
-    // Add each detection to dashboard
-    predictions.forEach(pred => {
-        const confidence = Math.round(pred.score * 100);
+                const colorClass = `color-${det.color.toLowerCase()}`;
 
-        const div = document.createElement('div');
-        div.className = 'detection-item flex justify-between items-center bg-gray-700 px-3 py-2 rounded';
+                div.innerHTML = `
+                    <div>
+                        <span class="color-badge ${colorClass}">${det.color}</span>
+                        <span class="font-medium">${det.class}</span>
+                    </div>
+                    <span class="text-blue-400 font-bold">${det.confidence}%</span>
+                `;
 
-        div.innerHTML = `
-            <span class="font-medium">${pred.class}</span>
-            <span class="text-blue-400 font-bold">${confidence}%</span>
-        `;
-
-        detectionsList.appendChild(div);
+                container.appendChild(div);
+            });
+        }
     });
+
+    // Show/hide no detections message
+    const hasAnyDetections = currentPredictions.length > 0;
+    noDetections.classList.toggle('hidden', hasAnyDetections);
 }
 
-/**
- * Clear the canvas
- */
+function getDirectionText(direction) {
+    return direction === 'left' ? 'ซ้าย' : direction === 'right' ? 'ขวา' : 'กลาง';
+}
+
 function clearCanvas() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-/**
- * Stop camera and clean up resources
- */
-function stopCamera() {
-    isDetecting = false;
-
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-        animationId = null;
-    }
-
-    if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-    }
-
-    video.srcObject = null;
-    clearCanvas();
-
-    // Reset UI
-    startBtn.disabled = false;
-    pauseBtn.disabled = true;
-    switchCameraBtn.disabled = true;
-    pauseBtn.textContent = 'หยุดชั่วคราว';
-
-    detectionsList.innerHTML = '<p class="text-gray-500 text-center">ยังไม่มีการตรวจจับวัตถุ</p>';
-    statusBar.textContent = 'ระบบพร้อมทำงาน - กด "เริ่มการทำงาน"';
-    statusBar.className = 'mt-2 px-3 py-1 rounded-full text-center text-sm font-medium bg-green-600';
 }
